@@ -14,8 +14,8 @@
 
 # Log
     日志这么分段存储的好处？
-    * 方便处理 corruptin；即使一个record 在两个log，也很容易拼接
-    * 方便在 map reduce 中进行切分；方便处理大log，不需要全部buffer
+    * 方便处理 corrupt；即使一个record 在两个log，也很容易拼接
+    * 方便在 map reduce 中进行切分；方便处理大log，不需要全部buffer；能够按照block快速定位
     * 日志没有使用压缩
 
 ## 相关参数

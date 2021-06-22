@@ -67,3 +67,17 @@ printf参数检查
     
 ## 内存底层库
     使用了 tcmalloc，之前用 jemalloc，应该差不多
+
+# Test
+故障注入：fault_injection_test.cc
+    
+    FaultInjectionTestEnv：中记录了两次sync间隔之间信息：新创建的文件、每个文件已经sync到的位置；
+        可以将尚未 sync 的文件那部分数据，进行truncate清理，或者删除执行任意sync之前新创建的文件，来模拟故障；详见注释
+
+故障注入：db_test.cc
+
+    SpecialEnv：模拟文件系统故障，磁盘满、sync失败、写入失败等；生成定制的 WritableFile
+
+Fake实现：memenv.cc
+
+    InMemoryEnv：
