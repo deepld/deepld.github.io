@@ -96,6 +96,11 @@ bthread 的 worker 线程
 # 其他内容
 ## 资源管理
 使用 ReSourcePool 管理 bthread meta、butex；使用的句柄是Type中对一个的一个 in32_t 的 version，通过version值来判断，句柄是否已经无效了
+    global保存该type的 RP_MAX_BLOCK_NGROUP 个BlockGroup，每个BlockGroup包含 N 个block，每个block有 BLOCK_NITEM 个type
+    分配：每个线程一个thead local的pool，get时先检查 local free list、global free list、local 分配的 block
+         1）第一次上述分配途径都是空，将从 global 生成一个 block，并记录其 index，从block拿出一个 type 返回，其中 block index + block offset 组合 instance id
+         2）后续可以通过 id 取出这个offset，算出 type 所在的 BlockGroup、Block、block 内 offset
+    释放：首先还给local 的 free list，满了之后还给 global free list，这样多线程可以共享 global 的free list；
 
 ## 堆栈管理
 使用了轻量级的 boost context https://github.com/boostorg/context
