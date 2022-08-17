@@ -79,8 +79,6 @@
         如果期间发生 error：
             HandleTimeout：设置在timer中，bthread_id_error(correlation_id, ERPCTIMEDOUT);
             HandleBackupRequest：backup request 失败
-
-        Q：bthread_id_t 中的两个 butex，是否存在内存泄露？
         
 ## RPCZ Time
     ## Server
