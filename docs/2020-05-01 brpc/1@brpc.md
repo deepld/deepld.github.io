@@ -63,6 +63,8 @@
             清理线程：如果是异步，执行_done->Run()；同步的话，直接 bthread_about_to_quit、bthread_id_unlock_and_destroy，将唤醒 join bthread 的等待线程
                 
     ## 对 bthread_id_t 的使用
+        这里会确保 bthread_id_t 在结束时调用 bthread_id_unlock_and_destroy进行删除；
+
         Channel::CallMethod：
             生成 bthread_id_t 保存 controller；id失败时，会调用 Controller::HandleSocketFailed
             bthread_id_lock_and_reset_range：为本次发送和重试，预留lock version；发送成功之前，将 id lock住
@@ -77,6 +79,8 @@
         如果期间发生 error：
             HandleTimeout：设置在timer中，bthread_id_error(correlation_id, ERPCTIMEDOUT);
             HandleBackupRequest：backup request 失败
+
+        Q：bthread_id_t 中的两个 butex，是否存在内存泄露？
         
 ## RPCZ Time
     ## Server
