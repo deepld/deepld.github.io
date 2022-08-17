@@ -37,32 +37,47 @@
 
 # Client
     ## Send Request
-    Channel::Init -> hannel::InitSingle
-        Channel::InitChannelOptions：设置protocol和相关处理函数、链接类型、协议index        
-        SocketMap::Insert：从全局map中，找到或者创建 server address 对应的 socket，方便后续继续使用
+        Channel::Init -> hannel::InitSingle
+            Channel::InitChannelOptions：设置protocol和相关处理函数、链接类型、协议index        
+            SocketMap::Insert：从全局map中，找到或者创建 server address 对应的 socket，方便后续继续使用
 
-    Channel::CallMethod
-        更新 Controller 的参数、生成 bthread id，并锁定一个range，为后续 retry 做准备；
-        SerializeRequestDefault：_serialize_request 对body部分，serialize、compressedData
-        设置超时 HandleTimeout(bthread_id_t)，或者设置 backup request timer (执行HandleBackupRequest)
-    Controller::IssueRPC
-        根据socketid取出socket，并根据pool还是single找出 sending sock        
-        PackRpcRequest：打包request，authentication、添加元数据信息到 meta，并Serialize meta；再meta、body写入到 io buf
-            correlation_id 存储在pack的meta中，以便server回应能找到bthread、controller
-        Socket::Write：同server send部分，注意：WriteRequest中包含了 bthread id
-    对同步请求，在这里等待 bthread_id_join
+        Channel::CallMethod
+            更新 Controller 的参数、生成 bthread id，并锁定一个range，为后续 retry 做准备；
+            SerializeRequestDefault：_serialize_request 对body部分，serialize、compressedData
+            设置超时 HandleTimeout(bthread_id_t)，或者设置 backup request timer (执行HandleBackupRequest)
+        Controller::IssueRPC
+            根据socketid取出socket，并根据pool还是single找出 sending sock        
+            PackRpcRequest：打包request，authentication、添加元数据信息到 meta，并Serialize meta；再meta、body写入到 io buf
+                correlation_id 存储在pack的meta中，以便server回应能找到bthread、controller
+            Socket::Write：同server send部分，注意：WriteRequest中包含了 bthread id
+        对同步请求，在这里等待 bthread_id_join
 
     ## Recv Response
-    Socket::ProcessEvent -> InputMessenger::OnNewMessages -> InputMessenger::CutInputMessage -> ParseRpcMessage -> ProcessInputMessage -> 
-    ProcessRpcResponse -> ParsePbFromIOBuf：protobuf meta解析、ParseFromCompressedData：protbuf data 解析（没有压缩时，还是调用 ParsePbFromIOBuf）
-        根据 bthread id 通过 bthread_id_lock，得到之前存储的 controller
-        ControllerPrivateAccessor -> Controller::OnVersionedRPCReturned
+        Socket::ProcessEvent -> InputMessenger::OnNewMessages -> InputMessenger::CutInputMessage -> ParseRpcMessage -> ProcessInputMessage -> 
+        ProcessRpcResponse -> ParsePbFromIOBuf：protobuf meta解析、ParseFromCompressedData：protbuf data 解析（没有压缩时，还是调用 ParsePbFromIOBuf）
+            根据 bthread id 通过 bthread_id_lock，得到之前存储的 controller
+            ControllerPrivateAccessor -> Controller::OnVersionedRPCReturned
 
-    Controller::EndRPC
-        删除定时器 bthread_timer_del、Controller::Call::OnComplete：清理 send sock
-        清理线程：如果是异步，执行_done->Run()；同步的话，直接 bthread_about_to_quit、bthread_id_unlock_and_destroy，将唤醒 join bthread 的等待线程
-            
-    
+        Controller::EndRPC
+            删除定时器 bthread_timer_del、Controller::Call::OnComplete：清理 send sock
+            清理线程：如果是异步，执行_done->Run()；同步的话，直接 bthread_about_to_quit、bthread_id_unlock_and_destroy，将唤醒 join bthread 的等待线程
+                
+    ## 对 bthread_id_t 的使用
+        Channel::CallMethod：
+            生成 bthread_id_t 保存 controller；id失败时，会调用 Controller::HandleSocketFailed
+            bthread_id_lock_and_reset_range：为本次发送和重试，预留lock version；发送成功之前，将 id lock住
+            bthread_id_unlock：request交给 socket 之后，释放lock
+
+        ProcessRpcResponse：收到回应之后，通过 id 取回 controller
+
+        Controller::OnVersionedRPCReturned：bthread_id_about_to_destroy：提前唤醒，告知准备 destroy 了
+
+        Controller::EndRPC：bthread_id_unlock_and_destroy
+
+        如果期间发生 error：
+            HandleTimeout：设置在timer中，bthread_id_error(correlation_id, ERPCTIMEDOUT);
+            HandleBackupRequest：backup request 失败
+        
 ## RPCZ Time
     ## Server
     1. InputMessenger::OnNewMessages：before read

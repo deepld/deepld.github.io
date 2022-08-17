@@ -166,6 +166,35 @@ butex 存储在 ReSourcePool 中，但返回的是 &butex->value, 这里存储�
         2. 因为sleep而陷入的wait：
             bthread 的 TaskMeta中记录有 timer id，根据这个删除 timer
 
+## bthread_id_t
+类似于mutex，保持一个lock的状态；可以在使用者之间传递 data 结构。
+
+    bthread_id_t：对应的 ID struct（即：meta结构） 存储在 ResourcePool；还保存两个 butex，使用另外的 ResourcePool
+        butex == meta->contended_ver() 表明lock过程中发生过冲突，这样 unlock时就要执行 wakeup，可以减少 wakeup 次数
+        问题：即使 bthread_id_t 释放了，对应的butex是没有释放的？必须在 bthread_id_t 析构的时候才会执行释放，但是放在 ResourcePool 中不会析构；下次bthread_id_t分配出来会重新new，也获得新的 butex，这里是否是有泄漏？
+
+    id_create_impl：创建同步点，并保存一份data进去，后续lock时可以读出这个 data
+        butex=1、join_butex=1；first=1、locked=2，id=[version=butex |slot<< 32]；实际上butex可以是任意值，重要的是他们之间的相对值，这里为了简化些为1
+        通过判断 butex <= id version <= locked，来决定 meta 是否仍然有效；
+        通过判断 butex == first，来判断 是否处于 lock 状态
+
+    bthread_id_lock、bthread_id_lock_and_reset_range_verbose：等待直到设置为lock成功
+        当前没有lock：butex设置为 locked（比如：2）；如果发生过lock 冲突（contended），butex lock成功该设置为 contended_ver；这样destroy时直到有人在wait，会调用 wakup(butex)
+        其他地方lock：如果没有准备destroy（butex=unlockable_ver），就不断重试并wait在butex上；
+
+    bthread_id_unlock：butex设置回first_ver
+
+    bthread_id_cancel：butex=join_butex=(locked + 2)，bthread::Id 返回给 pool了
+        问题：ID被再分配出去怎么办？通过当前id还会访问到 meta 里边的 mutex等信息
+    bthread_id_about_to_destroy：设置 butex 为不需要lock的状态，唤醒lock等待者
+        butex=unlockable_ver()，值表明 butex 不需要任何lock了；
+    bthread_id_unlock_and_destroy
+        butex=end_ver，全部设置为 end_ver；notify butex（lock等待在butex上）、notify join_butex（join等待在上边）
+
+    bthread_id_error2_verbose：如果当前是锁定状态，设置 error 就加到 meta queue中；等下次唤醒时插入进去，调用 error 回调
+
+    bthread_id_join：等待在 join_mutex 上，相当于等待 bthread_id_about_to_destroy 的执行
+
 ## 堆栈管理
 使用了轻量级的 boost context https://github.com/boostorg/context
 
